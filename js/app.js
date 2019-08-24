@@ -1,11 +1,12 @@
 // Base class for any moving agent in the game:
 class Agent {
     
+    // Every agent needs a diameter for collision detection:
     constructor(diameter = 20) {
         this.diameter = diameter;
         this.position = {};
-        // this.velocity = {};
-        this._sprite = 'images/Heart.png'; // Default sprite
+        // Have some default sprite:
+        this._sprite = 'images/Heart.png';
         Resources.load(this._sprite);
     }
 
@@ -24,17 +25,20 @@ class Agent {
     }
 
     render() {
-        ctx.drawImage(Resources.get(this._sprite), this._position.x, this._position.y);
+        try {
+            ctx.drawImage(Resources.get(this._sprite), this._position.x, this._position.y);
+        }
+        catch {}
     }
 
 }
 
 class Enemy extends Agent {
 
-    constructor(diameter = 70) {
+    constructor(diameter = 60) {
+        // Relate to the base class:
         super(diameter);
-        // The image/sprite for our enemies, this uses
-        // a helper we've provided to easily load images
+        // Only add custom sprite and initialize enemy paramters:
         this._sprite = 'images/enemy-bug.png';
         Resources.load(this._sprite);
         this.randomize();
@@ -42,15 +46,15 @@ class Enemy extends Agent {
 
     randomize() {
         // Enemies need a random start location and velocity:
-        this._position.x =  (Math.random() - 1.5) * ctx.canvas.width;
-        this._position.y = Math.floor(Math.random() * 3 + 1) * ctx.rowHeight;
-        this._velocity = {x: 50 + Math.random() * 200, y: 0};
+        this._position.x =  -1 * Math.random() * ctx.canvas.width - this.diameter;
+        this._position.y = ctx.rowHeight * Math.floor(1 + Math.random() * 3);
+        this._velocity = {x: 50 + Math.random() * 250, y: 0};
     }
 
     update(dt = 0) {
         super.update(dt);
         // Enemies can get off screen. If they do, they should go to a new random location and speed:
-        if (this._position.x > (ctx.canvas.width + this.diameter)) {
+        if (this._position.x > ctx.canvas.width || this._position.x < (ctx.canvas.width * -1 - this.diameter)) {
             this.randomize();
         }
     }
@@ -59,9 +63,11 @@ class Enemy extends Agent {
 
 class Player extends Agent {
 
-    constructor(diameter = 70) {
+    constructor(diameter = 50) {
+        // Relate to the base class:
         super(diameter);
-        this._speed = 300;
+        // Only add speed (velocity vector length), custom sprite and initialize:
+        this._speed = 500;
         this._sprite = 'images/char-pink-girl.png';
         Resources.load(this._sprite);
         this.init();
@@ -69,15 +75,28 @@ class Player extends Agent {
 
     init() {
         // Put player to its starting position:
-        // The player moves along the grid so its position is defined that way:
         this._gridPositionTarget = {x: 2, y: 5};
+        // The player moves along the grid so we need its current grid target position as well:
         this._position = {x: this._gridPositionTarget.x * ctx.columnWidth, y: this._gridPositionTarget.y * ctx.rowHeight};
+        // Starting velocity is 0:
         this._velocity = {x: 0, y: 0};
+    }
+
+    win() {
+        // When the player wins, it switches appearance:
+        const playerShapes = ["images/char-boy.png", "images/char-cat-girl.png", "images/char-horn-girl.png", "images/char-pink-girl.png", "images/char-princess-girl.png"];
+        this._sprite = playerShapes[(playerShapes.findIndex(e => e === this._sprite) + 1) % playerShapes.length]
+        Resources.load(this._sprite);
+        for (let enemy of allEnemies) {
+            enemy._velocity.x *= 20;
+            enemy._velocity.y *= 20;
+        }
+        this.init();
     }
 
     handleInput(keyCode) {
         if (keyCode) {
-            // Only take input, when player is standing:
+            // Only take input, when player is not moving:
             if (Math.abs(this._velocity.x) < 1 && Math.abs(this._velocity.y) < 1) {
                 const vectorTable = {
                     left: {x: -1, y: 0},
@@ -86,11 +105,14 @@ class Player extends Agent {
                     down: {x: 0, y: 1}
                 }
                 const vector = vectorTable[keyCode];
+                // Set velocity vector to have player already try and move a bit:
                 this._velocity = {x: this._speed * vector.x, y: this._speed * vector.y};
+                // Calculate new target:
                 const gridPositionNewTarget = {
-                    x: this._gridPositionTarget.x += vector.x,
-                    y: this._gridPositionTarget.y += vector.y
+                    x: this._gridPositionTarget.x + vector.x,
+                    y: this._gridPositionTarget.y + vector.y
                 }
+                // But accept it only if it's allowed (in the grid):
                 if (gridPositionNewTarget.x > -1 && gridPositionNewTarget.x < 5 && gridPositionNewTarget.y > -1 && gridPositionNewTarget.y < 6) {
                     this._gridPositionTarget = gridPositionNewTarget;
                 }
@@ -99,65 +121,41 @@ class Player extends Agent {
     }
 
     update(dt = 0) {
-        // If the target is reached fix the position:
+        // The player moves to its current target position - stop the movement when the target is reached:
         const targetPosition = {x: this._gridPositionTarget.x * ctx.columnWidth, y: this._gridPositionTarget.y * ctx.rowHeight};
+        // (Check whether the current velocity drove the player over the target. Safest way to check as tick might change.)
         if (this._velocity.x * (targetPosition.x - this._position.x) < 0 || this._velocity.y * (targetPosition.y - this._position.y) < 0) {
             this._position = targetPosition;
             this._velocity = {x: 0, y: 0};
         }
-        // Update:
-        super.update(dt);
-        // The player can hit an enemy. If it does it should be reset:
+        // The player can hit an enemy. If it does the player should be reset:
         for (let e of allEnemies) {
             const dx = this._position.x - e._position.x;
             const dy = this._position.y - e._position.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             const touchDistance = (this.diameter + e.diameter) * 0.5;
             if (distance < touchDistance) {
-                // e._velocity = {x: -1 * this._velocity.x - e._velocity.x, y:  this._velocity.y - e._velocity.y};
+                // e._velocity = {x: -800, y: 0};
                 this.init();
             }
         }
+        // The player can win. If it does, make it jump:
+        if (this._position.y < ctx.rowHeight * 0.1) {
+            this.win();
+        }
+        // Update:
+        super.update(dt);
     }
 
 }
 
-// // Enemies our player must avoid
-// var Enemy = function() {
-//     // Variables applied to each of our instances go here,
-//     // we've provided one for you to get started
-
-//     // The image/sprite for our enemies, this uses
-//     // a helper we've provided to easily load images
-//     this._sprite = 'images/enemy-bug.png';
-// };
-
-// // Update the enemy's position, required method for game
-// // Parameter: dt, a time delta between ticks
-// Enemy.prototype.update = function(dt) {
-//     // You should multiply any movement by the dt parameter
-//     // which will ensure the game runs at the same speed for
-//     // all computers.
-// };
-
-// // Draw the enemy on the screen, required method for game
-// Enemy.prototype.render = function() {
-//     ctx.drawImage(Resources.get(this._sprite), this.x, this.y);
-// };
-
-// Now write your own player class
-// This class requires an update(), render() and
-// a handleInput() method.
-// TODO
-
-
-// Now instantiate your objects.
+// Instantiate objects:
 // Place all enemy objects in an array called allEnemies
-// Place the player object in a variable called player
 let allEnemies = [];
 for (i = 0; i < 10; i++) {
     allEnemies.push(new Enemy);
 }
+// Place the player object in a variable called player
 let player = new Player ();
 
 // This listens for key presses and sends the keys to your
